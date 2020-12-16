@@ -20,6 +20,11 @@
 #include <WiFi.h>
 #include "ESPAsyncWebServer.h"
 
+
+const char* versionnumber='0.9.2'
+//added versionnumber; added sealevel calculation at setup
+
+
 #define PIXELPIN 16
 
 #include "NeoPixelBus.h"
@@ -61,6 +66,7 @@ Adafruit_BME680 bme; // I2C
 float temperature;
 float humidity;
 float pressure;
+float altitude;
 float gasResistance;
 String aiq;
 
@@ -69,6 +75,8 @@ AsyncEventSource events("/events");
 
 unsigned long lastTime = 0;  
 unsigned long timerDelay = 30000;  // send readings timer
+
+const float sealevel=1024; //TODO ON OTHER LOCATIONS: NHN nearest official station
 
 float hum_weighting = 0.25; // so hum effect is 25% of the total air quality score
 float gas_weighting = 0.75; // so gas effect is 75% of the total air quality score
@@ -151,6 +159,8 @@ void getBME680Readings(){
   humidity = bme.humidity;
   gasResistance = bme.gas_resistance / 1000.0;
 
+  Serial.println(bme.gas_resistance);
+
   humidity_score = GetHumidityScore(humidity);
   gas_score      = GetGasScore(gasResistance*1000.0);
 
@@ -177,6 +187,9 @@ String processor(const String& var){
   }
   else if(var == "PRESSURE"){
     return String(pressure);
+  }
+  else if(var == "ALTITUDE"){
+    return String(altitude);
   }
  else if(var == "GAS"){
     return String(gasResistance);
@@ -260,6 +273,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     .card.temperature { color: #0e7c7b; }
     .card.humidity { color: #17bebb; }
     .card.pressure { color: #3fca6b; }
+    .card.altitude { color: #edd93e; }
     .card.gas { color: #d62246; }
     .card.aiq { color: ##669999; }
     .hazardous { color: #cc0000 !important;}
@@ -289,6 +303,9 @@ const char index_html[] PROGMEM = R"rawliteral(
       </div>
       <div class="card pressure">
         <h4><i class="fas fa-angle-double-down"></i> PRESSURE</h4><p><span class="reading"><span id="pres">%PRESSURE%</span> hPa</span></p>
+      </div>
+       <div class="card altitude">
+        <h4><i class="fas fa-angle-double-down"></i> SEA LEVEL</h4><p><span class="reading"><span id="pres">%ALTITUDE%</span> m</span></p>
       </div>
       <div class="card gas">
         <h4><i class="fas fa-wind"></i> GAS</h4><p><span class="reading"><span id="gas">%GAS%</span> K&ohm;</span></p>
@@ -325,6 +342,11 @@ if (!!window.EventSource) {
  source.addEventListener('pressure', function(e) {
   console.log("pressure", e.data);
   document.getElementById("pres").innerHTML = e.data;
+ }, false);
+
+ source.addEventListener('altitude', function(e) {
+  console.log("altitude", e.data);
+  document.getElementById("altitude").innerHTML = e.data;
  }, false);
  
  source.addEventListener('gas', function(e) {
@@ -385,6 +407,8 @@ void setup() {
   bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
   bme.setGasHeater(320, 150); // 320*C for 150 ms
 
+  altitude=bme.readAltitude(sealevel);
+  
   GetGasReference();
 
   // Handle Web Server
@@ -426,6 +450,7 @@ void loop() {
     Serial.printf("Temperature = %.2f ºC \n", temperature);
     Serial.printf("Humidity = %.2f % \n", humidity);
     Serial.printf("Pressure = %.2f hPa \n", pressure);
+    Serial.printf("Sea level = %.2f m \n", altitude);
     Serial.printf("Gas Resistance = %.2f KOhm \n", gasResistance);
     //Serial.printf("AIQ = %s \n", aiq);
     Serial.println();
@@ -435,6 +460,7 @@ void loop() {
     events.send(String(temperature).c_str(),"temperature",millis());
     events.send(String(humidity).c_str(),"humidity",millis());
     events.send(String(pressure).c_str(),"pressure",millis());
+    events.send(String(altitude).c_str(),"altitude",millis());
     events.send(String(gasResistance).c_str(),"gas",millis());
     events.send(String(aiq).c_str(),"aiq",millis());
     
