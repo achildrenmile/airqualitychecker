@@ -10,6 +10,7 @@
  * **The above copyright notice and this permission notice shall be included in all
  * ** copies or substantial portions of the Software.
  * **Gas Scoring Model from https://github.com/G6EJD/BME680-Example/blob/master/ESP32_bme680_CC_demo_03.ino
+ * Change 04-02-2021: add MQTT support*
 
 *********/
 
@@ -18,15 +19,19 @@
 #include <Adafruit_Sensor.h>
 #include "Adafruit_BME680.h"
 #include <WiFi.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+#include "secrets.h"
+
+#define WEBSERVER //uncomment if you don't want to use the web server
+
+#ifdef WEBSERVER
 #include "ESPAsyncWebServer.h"
+#endif 
 
+#define PIXELPIN 16 //uncomment if you don't want to use a led indicator
 
-const char* versionnumber='0.9.2'
-//added versionnumber; added sealevel calculation at setup
-
-
-#define PIXELPIN 16
-
+#ifdef PIXELPIN
 #include "NeoPixelBus.h"
 #include "NeoPixelAnimator.h"
 #define PIXELCOUNT 7//Define the number of leds
@@ -49,9 +54,11 @@ void SetPixelColorAndShow(RgbColor colortarget)
      strip.Show();
 }
 
-// Replace with your network credentials
-const char* ssid = "<yourssid>";
-const char* password = "<yourwifipassword>";
+#endif
+
+
+WiFiClient mainESP;
+PubSubClient MQTT(mainESP);
 
 //Uncomment if using SPI
 /*#define BME_SCK 18
@@ -70,11 +77,15 @@ float altitude;
 float gasResistance;
 String aiq;
 
+#ifdef WEBSERVER
+
 AsyncWebServer server(80);
 AsyncEventSource events("/events");
 
+#endif
+
 unsigned long lastTime = 0;  
-unsigned long timerDelay = 30000;  // send readings timer
+unsigned long timerDelay = 10000;  // send readings timer
 
 const float sealevel=1024; //TODO ON OTHER LOCATIONS: NHN nearest official station
 
@@ -176,6 +187,8 @@ void getBME680Readings(){
   Serial.println("--------------------------------------------------------------");
 }
 
+#ifdef WEBSERVER
+
 String processor(const String& var){
   getBME680Readings();
   //Serial.println(var);
@@ -230,28 +243,6 @@ String processor(const String& var){
 
     return aiqclass;
  }
-}
-
-void checkAIQandLight() 
-{
-   if(aiq=="Hazardous") {
-      SetPixelColorAndShow(RgbColor(255,0,0));
-    }
-    else if(aiq== "Very Unhealthy") {
-      SetPixelColorAndShow(RgbColor(200,0,0));
-    }
-    else if(aiq=="Unhealthy") {
-      SetPixelColorAndShow(RgbColor(255,99,71));
-    }
-    else if(aiq=="Unhealthy for Sensitive Groups") {
-      SetPixelColorAndShow(RgbColor(255,69,0));
-    }
-    else if(aiq=="Moderate") {
-      SetPixelColorAndShow(RgbColor(255,165,0));
-    }
-    else if(aiq=="good") {
-      SetPixelColorAndShow(RgbColor(124,252,0));
-    }
 }
 
 const char index_html[] PROGMEM = R"rawliteral(
@@ -379,21 +370,69 @@ if (!!window.EventSource) {
 </body>
 </html>)rawliteral";
 
+#endif
+
+#ifdef PIXELPIN
+
+void checkAIQandLight() 
+{
+   if(aiq=="Hazardous") {
+      SetPixelColorAndShow(RgbColor(255,0,0));
+    }
+    else if(aiq== "Very Unhealthy") {
+      SetPixelColorAndShow(RgbColor(200,0,0));
+    }
+    else if(aiq=="Unhealthy") {
+      SetPixelColorAndShow(RgbColor(255,99,71));
+    }
+    else if(aiq=="Unhealthy for Sensitive Groups") {
+      SetPixelColorAndShow(RgbColor(255,69,0));
+    }
+    else if(aiq=="Moderate") {
+      SetPixelColorAndShow(RgbColor(255,165,0));
+    }
+    else if(aiq=="good") {
+      SetPixelColorAndShow(RgbColor(124,252,0));
+    }
+}
+
+#endif
+
+
+
+void startWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    Serial.println("Connection Failed! Rebooting...");
+    delay(1000);
+    ESP.restart();
+  }
+  WiFi.setHostname(mqtt_name);
+  Serial.println("Ready");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+  MQTT.setServer(mqtt_server, 1883);
+}
+
+void reconnect() {
+  while (!MQTT.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    if (MQTT.connect(mqtt_name,mqtt_user,mqtt_pass)) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(MQTT.state());
+      Serial.println(" try again in 5 seconds");
+      for (int i = 0; i < 5000; i++) {
+        delay(1);
+      }
+    }
+  }
+}
 void setup() {
   Serial.begin(115200);
-
-  // Set the device as a Station and Soft Access Point simultaneously
-  WiFi.mode(WIFI_AP_STA);
-  
-  // Set device as a Wi-Fi Station
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Setting as a Wi-Fi Station..");
-  }
-  Serial.print("Station IP Address: ");
-  Serial.println(WiFi.localIP());
-  Serial.println();
+  startWiFi();
 
   // Init BME680 sensor
   if (!bme.begin()) {
@@ -411,6 +450,8 @@ void setup() {
   
   GetGasReference();
 
+
+  #ifdef WEBSERVER
   // Handle Web Server
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/html", index_html, processor);
@@ -428,6 +469,8 @@ void setup() {
   server.addHandler(&events);
   server.begin();
 
+  #endif
+
   //------------------LED Shield Initialization------------------------------------------------------------------
   #ifdef PIXELPIN
   //------LED Initialization----
@@ -442,8 +485,16 @@ void setup() {
 
 void loop() {
 
+   StaticJsonDocument<300> environmentdatadoc;
+   environmentdatadoc["sensorType"] = "Environment";
+ 
+   char buffer[300];
+
   //SetPixelColorAndShow(RgbColor(250,0,0));
   if ((millis() - lastTime) > timerDelay) {
+    if (WiFi.status() != WL_CONNECTED) startWiFi();
+    MQTT.loop();
+    if (!MQTT.connected()) reconnect();
     GetGasReference();
     getBME680Readings();
     checkAIQandLight();
@@ -452,9 +503,16 @@ void loop() {
     Serial.printf("Pressure = %.2f hPa \n", pressure);
     Serial.printf("Sea level = %.2f m \n", altitude);
     Serial.printf("Gas Resistance = %.2f KOhm \n", gasResistance);
-    //Serial.printf("AIQ = %s \n", aiq);
+    environmentdatadoc["temperature"]=temperature;
+    environmentdatadoc["humidity"]=humidity;
+    environmentdatadoc["pressure"]=pressure;
+    environmentdatadoc["altitude"]=altitude;
+    environmentdatadoc["gasResistance"]=gasResistance;
+    environmentdatadoc["aiq"]=aiq;
+    Serial.printf("AIQ = %s \n", aiq);
     Serial.println();
 
+    #ifdef WEBSERVER
     // Send Events to the Web Server with the Sensor Readings
     events.send("ping",NULL,millis());
     events.send(String(temperature).c_str(),"temperature",millis());
@@ -463,6 +521,12 @@ void loop() {
     events.send(String(altitude).c_str(),"altitude",millis());
     events.send(String(gasResistance).c_str(),"gas",millis());
     events.send(String(aiq).c_str(),"aiq",millis());
+    #endif
+
+    serializeJson(environmentdatadoc, buffer);
+    MQTT.publish(mqtt_maintopic, buffer);
+    Serial.println("Message Published: ");
+    Serial.println(buffer);
     
     lastTime = millis();
   }
