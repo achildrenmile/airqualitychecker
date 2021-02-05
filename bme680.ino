@@ -11,6 +11,7 @@
  * ** copies or substantial portions of the Software.
  * **Gas Scoring Model from https://github.com/G6EJD/BME680-Example/blob/master/ESP32_bme680_CC_demo_03.ino
  * Change 04-02-2021: add MQTT support*
+ * Change 05-02-2021: Get gas reference every 5 times, LED fix and send values through seperate MQTT channels in addition
 
 *********/
 
@@ -476,11 +477,10 @@ void setup() {
   //------LED Initialization----
   Serial.println("[INFO: Starting LED");
   strip.Begin();
+  SetPixelColorAndShow(RgbColor(0,0,0));
   #endif
   
   getBME680Readings();
-  SetPixelColorAndShow(RgbColor(0,0,0));
-
 }
 
 void loop() {
@@ -495,9 +495,13 @@ void loop() {
     if (WiFi.status() != WL_CONNECTED) startWiFi();
     MQTT.loop();
     if (!MQTT.connected()) reconnect();
-    GetGasReference();
+    if ((getgasreference_count++) % 5 == 0) GetGasReference();
     getBME680Readings();
+
+    #ifdef PIXELPIN
     checkAIQandLight();
+    #endif
+      
     Serial.printf("Temperature = %.2f ºC \n", temperature);
     Serial.printf("Humidity = %.2f % \n", humidity);
     Serial.printf("Pressure = %.2f hPa \n", pressure);
@@ -524,7 +528,12 @@ void loop() {
     #endif
 
     serializeJson(environmentdatadoc, buffer);
-    MQTT.publish(mqtt_maintopic, buffer);
+    MQTT.publish(mqtt_maintopic, buffer);//publish the whole data as json
+    MQTT.publish(mqtt_temperaturetopic, String(temperature).c_str());
+    MQTT.publish(mqtt_humiditytopic, String(humidity).c_str());
+    MQTT.publish(mqtt_pressuretopic, String(pressure).c_str());
+    MQTT.publish(mqtt_altitudetopic, String(altitude).c_str());
+    MQTT.publish(mqtt_aiqtopic, String(aiq).c_str());
     Serial.println("Message Published: ");
     Serial.println(buffer);
     
