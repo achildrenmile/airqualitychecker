@@ -25,7 +25,7 @@ One must also point out the limits of the sensors used here: In particular, gas 
 * change the defines in the sketch according to your needs
 * install all dependencies
 * choose the right hardware board (if not listed, add https://dl.espressif.com/dl/package_esp32_index.json to the additional board manager urls)
-** currently ESP32 DevKit and MH ET live are tested, but it should work with other boards as well
-** if you want to use an ESP8266 you will slightly have to change the reference to Wifi and WebServer as well as the calls to the methods and parameters
+  * currently ESP32 DevKit and MH ET live are tested, but it should work with other boards as well
+  * if you want to use an ESP8266 you will slightly have to change the reference to Wifi and WebServer as well as the calls to the methods and parameters
 * flash and have fun
 
