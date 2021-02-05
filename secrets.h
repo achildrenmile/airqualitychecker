@@ -14,4 +14,4 @@ char* mqtt_humiditytopic ="homeassistant/environmentzone1/data/humidity";
 char* mqtt_pressuretopic ="homeassistant/environmentzone1/data/pressure";
 char* mqtt_altitudetopic ="homeassistant/environmentzone1/data/altitude";
 char* mqtt_aiqtopic = "homeassistant/environmentzone1/data/aiq";
-
+char* mqtt_lighttoggletopic = "homeassistant/environmentzone1/light/toogle";
