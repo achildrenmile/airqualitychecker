@@ -11,8 +11,7 @@
  * ** copies or substantial portions of the Software.
  * **Gas Scoring Model from https://github.com/G6EJD/BME680-Example/blob/master/ESP32_bme680_CC_demo_03.ino
  * Change 04-02-2021: add MQTT support*
- * Change 05-02-2021: Get gas reference every 5 times, LED fix and send values through seperate MQTT channels in addition
-
+ * Change 04-02-2021: light on off via MQTT
 *********/
 
 #include <Wire.h>
@@ -38,6 +37,8 @@
 #define PIXELCOUNT 7//Define the number of leds
 const uint16_t PixelCount = PIXELCOUNT; // make sure to set this to the number of pixels in your strip
 const uint8_t PixelPin = PIXELPIN;   // make sure to set this to the correct pin, ignored for Esp8266
+bool lightson=true;
+
 
 NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
 // For Esp8266, the Pin is omitted and it uses GPIO3 due to DMA hardware use.  
@@ -377,6 +378,9 @@ if (!!window.EventSource) {
 
 void checkAIQandLight() 
 {
+   if(!lightson)
+      return;
+  
    if(aiq=="Hazardous") {
       SetPixelColorAndShow(RgbColor(255,0,0));
     }
@@ -397,9 +401,30 @@ void checkAIQandLight()
     }
 }
 
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+
+  if(strcmp(topic,mqtt_lighttoggletopic)==0 && lightson)
+  {//ignore payload only toogle if message will within the specified topic
+      SetPixelColorAndShow(RgbColor(0,0,0));
+      lightson=false;
+      Serial.println("light is switched off");
+  }
+  else
+  {
+    lightson=true;
+    checkAIQandLight();
+    Serial.println("light is switched on");
+  }
+}
+
 #endif
-
-
 
 void startWiFi() {
   WiFi.mode(WIFI_STA);
@@ -414,6 +439,11 @@ void startWiFi() {
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
   MQTT.setServer(mqtt_server, 1883);
+
+  #ifdef PIXELPIN
+  MQTT.setCallback(callback);
+  Serial.println("Callback set");
+  #endif
 }
 
 void reconnect() {
@@ -421,6 +451,9 @@ void reconnect() {
     Serial.print("Attempting MQTT connection...");
     if (MQTT.connect(mqtt_name,mqtt_user,mqtt_pass)) {
       Serial.println("connected");
+      MQTT.subscribe(mqtt_lighttoggletopic);
+      Serial.println("subscribed to");
+      Serial.println(mqtt_lighttoggletopic);
     } else {
       Serial.print("failed, rc=");
       Serial.print(MQTT.state());
