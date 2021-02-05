@@ -28,3 +28,7 @@ Add MQTT Support
 
 # Update 05-02-2021
 Get gas reference every 5 times, LED fix and send values through seperate MQTT channels in addition
+
+# Update 05-02-2021
+Toggle lights on/off via MQTT
+
